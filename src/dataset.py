@@ -86,7 +86,7 @@ class BrainTumorDataset(Dataset):
             transformed = self.transform(image=image_uint8)
             image = transformed['image']
         else:
-            image = torch.FloatTensor(image).permute(2, 0, 1) / 255.0
+            image = torch.FloatTensor(image).permute(2, 0, 1)
 
         return {
             'image': image,
