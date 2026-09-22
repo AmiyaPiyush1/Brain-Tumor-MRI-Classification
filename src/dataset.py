@@ -50,14 +50,14 @@ class BrainTumorDataset(Dataset):
 
         # Map integer label to folder name
         class_folders = {
-            0: 'no_tumor',
+            0: 'notumor',
             1: 'glioma',
             2: 'meningioma',
             3: 'pituitary'
         }
 
         label = int(row['label'])
-        class_folder = class_folders.get(label, 'no_tumor')
+        class_folder = class_folders.get(label, 'notumor')
         image_path = os.path.join(self.image_dir, class_folder, f"{row['id_code']}.jpg").replace('\\', '/')
 
         try:
