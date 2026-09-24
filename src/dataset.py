@@ -19,6 +19,13 @@ from .mri_processor import MRIImageProcessor
 class BrainTumorDataset(Dataset):
     """PyTorch dataset for brain tumor MRI classification"""
 
+    CLASS_FOLDERS = {
+        0: 'notumor',
+        1: 'glioma',
+        2: 'meningioma',
+        3: 'pituitary'
+    }
+
     def __init__(
         self,
         csv_file: Optional[str],
@@ -30,6 +37,7 @@ class BrainTumorDataset(Dataset):
             self.data = pd.read_csv(csv_file)
         else:
             self.data = None
+            
         self.image_dir = image_dir
         self.transform = transform
         self.is_training = is_training
@@ -46,36 +54,30 @@ class BrainTumorDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         if self.data is None:
             raise ValueError("Dataset data is not loaded")
+
         row = self.data.iloc[idx]
-
-        # Map integer label to folder name
-        class_folders = {
-            0: 'notumor',
-            1: 'glioma',
-            2: 'meningioma',
-            3: 'pituitary'
-        }
-
         label = int(row['label'])
-        class_folder = class_folders.get(label, 'notumor')
-        image_path = os.path.join(self.image_dir, class_folder, f"{row['id_code']}.jpg").replace('\\', '/')
 
-        try:
-            if not os.path.exists(image_path):
-                alt_paths = [
-                    image_path.replace('.jpg', '.png'),
-                    image_path.replace('.jpg', '.jpeg')
-                ]
-                for alt_path in alt_paths:
-                    if os.path.exists(alt_path):
-                        image_path = alt_path
-                        break
-                else:
-                    return self.__getitem__((idx + 1) % len(self.data))
+        # Explicitly raise KeyError if an unexpected integer label appears
+        if label not in self.CLASS_FOLDERS:
+            raise ValueError(f"Invalid label '{label}' at index {idx}. Expected one of {list(self.CLASS_FOLDERS.keys())}")
 
-            image = self.processor.preprocess_mri_image(image_path)
-        except Exception as e:
-            return self.__getitem__((idx + 1) % len(self.data))
+        class_folder = self.CLASS_FOLDERS[label]
+        base_path = os.path.join(self.image_dir, class_folder, f"{row['id_code']}").replace('\\', '/')
+
+        # Find valid extension (.jpg, .png, .jpeg)
+        image_path = None
+        for ext in ['.jpg', '.png', '.jpeg']:
+            possible_path = f"{base_path}{ext}"
+            if os.path.exists(possible_path):
+                image_path = possible_path
+                break
+
+        if image_path is None:
+            raise FileNotFoundError(f"Image for ID code '{row['id_code']}' not found in '{os.path.join(self.image_dir, class_folder)}'")
+
+        # Load and preprocess image
+        image = self.processor.preprocess_mri_image(image_path)
 
         # MRI preprocessor returns grayscale — stack to 3 channels for EfficientNet
         if len(image.shape) == 2:
@@ -113,82 +115,18 @@ class BrainTumorDataset(Dataset):
 
 
 def get_transforms() -> Tuple[A.Compose, A.Compose]:
-    """Get lightweight transforms for fast training"""
+    """Get lightweight transforms for 3-channel RGB image inputs"""
     train_transform = A.Compose([
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
         A.RandomRotate90(p=0.5),
-        A.Normalize(mean=(0.5,), std=(0.5,)),
+        A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ToTensorV2()
     ])
 
     val_transform = A.Compose([
-        A.Normalize(mean=(0.5,), std=(0.5,)),
+        A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ToTensorV2()
     ])
 
     return train_transform, val_transform
-
-
-def create_data_loaders(
-    csv_file: str,
-    image_dir: str,
-    batch_size: int = 2,
-    num_workers: int = 2,
-    train_split: float = 0.8,
-    random_state: int = 42
-) -> tuple[DataLoader, DataLoader, DataLoader]:
-    """Create train, validation, and test data loaders"""
-    np.random.seed(random_state)
-    torch.manual_seed(random_state)
-
-    df = pd.read_csv(csv_file)
-
-    train_df, temp_df = train_test_split(
-        df,
-        test_size=1 - train_split,
-        random_state=random_state,
-        stratify=df['label']
-    )
-
-    val_df, test_df = train_test_split(
-        temp_df,
-        test_size=0.5,
-        random_state=random_state,
-        stratify=temp_df['label']
-    )
-
-    train_transform, val_transform = get_transforms()
-
-    train_dataset = BrainTumorDataset(csv_file=None, image_dir=image_dir, transform=train_transform)
-    train_dataset.data = train_df
-
-    val_dataset = BrainTumorDataset(csv_file=None, image_dir=image_dir, transform=val_transform)
-    val_dataset.data = val_df
-
-    test_dataset = BrainTumorDataset(csv_file=None, image_dir=image_dir, transform=val_transform)
-    test_dataset.data = test_df
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size,
-                              sampler=train_dataset.get_weighted_sampler(),
-                              num_workers=num_workers, pin_memory=True)
-
-    val_loader = DataLoader(val_dataset, batch_size=batch_size,
-                            shuffle=False, num_workers=num_workers, pin_memory=True)
-
-    test_loader = DataLoader(test_dataset, batch_size=batch_size,
-                             shuffle=False, num_workers=num_workers, pin_memory=True)
-
-    return train_loader, val_loader, test_loader
-
-
-def create_stratified_kfold_splits(csv_file: str, n_splits: int = 5, random_state: int = 42) -> list:
-    """Create stratified k-fold splits for cross-validation"""
-    df = pd.read_csv(csv_file)
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
-    splits = []
-    for train_idx, val_idx in skf.split(df, df['label']):
-        splits.append((train_idx, val_idx))
-
-    return splits
