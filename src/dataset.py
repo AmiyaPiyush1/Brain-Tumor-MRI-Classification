@@ -118,8 +118,6 @@ def get_transforms() -> Tuple[A.Compose, A.Compose]:
     """Get lightweight transforms for 3-channel RGB image inputs"""
     train_transform = A.Compose([
         A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.RandomRotate90(p=0.5),
         A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ToTensorV2()
     ])
