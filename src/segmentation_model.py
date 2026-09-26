@@ -43,8 +43,6 @@ class UNetWithEfficientNet(nn.Module):
     Supports optional weight transfer from a trained classification model.
     """
 
-    ENCODER_CHANNELS = [24, 32, 56, 160, 1792]
-
     def __init__(self, num_classes: int = 1, pretrained: bool = True, dropout_rate: float = 0.3):
         super().__init__()
         self.num_classes = num_classes
@@ -52,11 +50,17 @@ class UNetWithEfficientNet(nn.Module):
         self.encoder = (EfficientNet.from_pretrained('efficientnet-b4') if pretrained
                         else EfficientNet.from_name('efficientnet-b4'))
 
-        self.bridge  = ConvBNReLU(self.ENCODER_CHANNELS[-1], 512)
-        self.decoder4 = DecoderBlock(512, self.ENCODER_CHANNELS[3], 256)
-        self.decoder3 = DecoderBlock(256, self.ENCODER_CHANNELS[2], 128)
-        self.decoder2 = DecoderBlock(128, self.ENCODER_CHANNELS[1], 64)
-        self.decoder1 = DecoderBlock(64,  self.ENCODER_CHANNELS[0], 32)
+        # Dynamically calculate skip connection channels
+        dummy_input = torch.zeros(1, 3, 256, 256)
+        with torch.no_grad():
+            skips = self._extract_encoder_features(dummy_input)
+        ch = [s.shape[1] for s in skips]
+
+        self.bridge  = ConvBNReLU(ch[4], 512)
+        self.decoder4 = DecoderBlock(512, ch[3], 256)
+        self.decoder3 = DecoderBlock(256, ch[2], 128)
+        self.decoder2 = DecoderBlock(128, ch[1], 64)
+        self.decoder1 = DecoderBlock(64,  ch[0], 32)
 
         self.final_upsample = nn.Sequential(
             nn.ConvTranspose2d(32, 32, kernel_size=2, stride=2),
