@@ -74,7 +74,10 @@ class BRISCSegmentationDataset(Dataset):
 
         if not isinstance(image, torch.Tensor):
             image = torch.from_numpy(image.transpose(2, 0, 1)).float() / 255.0
-        mask = torch.from_numpy(mask).long().unsqueeze(0).float()
+            
+        if not isinstance(mask, torch.Tensor):
+            mask = torch.from_numpy(mask)
+        mask = mask.clone().detach().long().unsqueeze(0).float()
 
         return {'image': image, 'mask': mask, 'image_path': sample['image_path']}
 
@@ -86,10 +89,10 @@ def get_segmentation_transforms(target_size: Tuple[int, int] = (256, 256)):
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.3),
         A.RandomRotate90(p=0.3),
-        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),
+        A.Affine(scale=(0.9, 1.1), translate_percent=(-0.05, 0.05), rotate=(-15, 15), p=0.5),
         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
-        A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
-        A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03, p=0.3),
+        A.GaussNoise(p=0.3),
+        A.ElasticTransform(alpha=120, sigma=120 * 0.05, p=0.3),
         A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ToTensorV2()
     ])
