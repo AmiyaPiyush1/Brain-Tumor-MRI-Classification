@@ -70,7 +70,7 @@ class UNetWithEfficientNet(nn.Module):
         x = self.encoder._swish(self.encoder._bn0(self.encoder._conv_stem(x)))
         for idx, block in enumerate(self.encoder._blocks):
             x = block(x)
-            if idx in [3, 5, 9, 21]:
+            if idx in [1, 5, 9, 21]:
                 features.append(x)
         x = self.encoder._swish(self.encoder._bn1(self.encoder._conv_head(x)))
         features.append(x)
